@@ -30,8 +30,5 @@ def run_sources(
 
 
 def get_all_scrapers() -> list[SourceScraper]:
-    from services.scraper.sources.example_government import ExampleGovernmentScraper
-
-    return [
-        ExampleGovernmentScraper(),
-    ]
+    """Return production scrapers only. Example/mock scrapers are in services/scraper/examples/."""
+    return []

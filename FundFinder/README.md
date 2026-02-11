@@ -21,11 +21,18 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Project structure
+
+- **Production pipeline** – `services/scraper/` (pipeline, models, sources, utils). Real scrapers will fetch from APIs (see docs); `get_all_scrapers()` currently returns production scrapers only (none yet). No CLI script for production until those are added.
+- **Examples** – `services/scraper/examples/` holds demo/educational code (example scraper, fixtures, demo CLI). Not part of the production pipeline.
+
 ## Run
+
+**Example scraper** (for learning; uses a local HTML fixture):
 
 ```bash
 # From repo root with venv activated
-python scripts/show_grants.py
+python services/scraper/examples/demo_cli/show_example_grants.py
 ```
 
 ## Test

@@ -1,6 +1,11 @@
+"""
+Example scraper used for educational/demo purposes only.
+Not part of the production scraping pipeline.
+"""
+
 from pathlib import Path
 
-from bs4 import BeautifulSoup  
+from bs4 import BeautifulSoup
 
 from services.scraper.models import Grant
 from services.scraper.sources.base import SourceScraper
@@ -11,7 +16,7 @@ from services.scraper.utils import (
     utc_now,
 )
 
-FIXTURE_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "example_government.html"
+FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "example_government.html"
 
 
 class ExampleGovernmentScraper(SourceScraper):
