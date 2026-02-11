@@ -2,7 +2,7 @@
 
 FundFinder is a student-grants discovery platform that scrapes scholarship/grant sources, normalizes the data into a unified schema, and matches opportunities to users via smart search and an agent-like assistant.
 
-See [design-PoC.md](design-PoC.md) for architecture and current state.
+See [design-PoC.md](docs/design-PoC.md) for architecture and current state.
 
 ## Setup
 
