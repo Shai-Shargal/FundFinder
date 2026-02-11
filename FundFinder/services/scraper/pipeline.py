@@ -1,7 +1,7 @@
 import logging
 
+from services.scraper.base import SourceScraper
 from services.scraper.models import Grant
-from services.scraper.sources.base import SourceScraper
 
 logger = logging.getLogger(__name__)
 
@@ -30,4 +30,6 @@ def run_sources(
 
 
 def get_all_scrapers() -> list[SourceScraper]:
-    return []
+    from services.scraper.scrapers import get_all_scrapers as _get
+
+    return _get()

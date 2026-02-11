@@ -7,8 +7,8 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
+from services.scraper.base import SourceScraper
 from services.scraper.models import Grant
-from services.scraper.sources.base import SourceScraper
 from services.scraper.utils import (
     clean_hebrew_text,
     content_hash,

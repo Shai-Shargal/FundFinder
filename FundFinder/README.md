@@ -23,8 +23,8 @@ pip install -r requirements.txt
 
 ## Project structure
 
-- **Production pipeline** – `services/scraper/` (pipeline, models, sources, utils). Real scrapers will fetch from APIs (see docs); `get_all_scrapers()` currently returns production scrapers only (none yet). No CLI script for production until those are added.
-- **Examples** – `services/scraper/examples/` holds demo/educational code (example scraper, fixtures, demo CLI). Not part of the production pipeline.
+- **Production pipeline** – `services/scraper/`: shared code (base, models, pipeline, utils) and `scrapers/` with **one folder per website**. Each scraper lives in `scrapers/<site_name>/`; add new scrapers there and register them in `scrapers/__init__.py`. Real scrapers will fetch from APIs (see docs). No CLI for production until those are added.
+- **Examples** – `examples/` (at repo root, alongside `docs/`, `scripts/`, `tests/`) holds demo/educational code (example scraper, fixtures, demo CLI). Not part of the production pipeline.
 
 ## Run
 
@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 ```bash
 # From repo root with venv activated
-python services/scraper/examples/demo_cli/show_example_grants.py
+python examples/demo_cli/show_example_grants.py
 ```
 
 ## Test
