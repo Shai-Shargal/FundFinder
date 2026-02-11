@@ -30,5 +30,4 @@ def run_sources(
 
 
 def get_all_scrapers() -> list[SourceScraper]:
-    """Return production scrapers only. Example/mock scrapers are in services/scraper/examples/."""
     return []
