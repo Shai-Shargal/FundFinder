@@ -16,14 +16,13 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
 from services.scraper.pipeline import get_all_scrapers, run_sources
-from services.scraper.utils import rtl_display
 
 grants = run_sources(get_all_scrapers())
 print(f"Found {len(grants)} grant(s)\n")
 for i, g in enumerate(grants, 1):
     print(f"--- Grant {i} ---")
-    print(f"  title:       {rtl_display(g.title)}")
-    print(f"  description: {rtl_display(g.description)}")
+    print(f"  title:       {(g.title)}")
+    print(f"  description: {(g.description)}")
     print(f"  source_url:  {g.source_url}")
     print(f"  deadline:    {g.deadline}")
     print(f"  deadline_text: {g.deadline_text}")
