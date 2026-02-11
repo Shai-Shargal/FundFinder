@@ -1,11 +1,9 @@
-"""Scraper utilities: content_hash, retries, Hebrew-aware text, date parsing.
-
-Do not translate or transliterate Hebrew; preserve original meaning.
-"""
 
 import hashlib
+import json
 import re
 from datetime import date, datetime, timezone
+from typing import Any
 
 from tenacity import (
     retry,
@@ -14,19 +12,50 @@ from tenacity import (
     wait_exponential,
 )
 
-# RTL/LTR Unicode marks; strip only if they cause comparison issues (documented).
 RTL_LTR_MARKS = "\u200e\u200f\u202a\u202b\u202c\u202d\u202e"
 
-def rtl_display(text: str | None) -> str:
-    """Reverse RTL text for terminal display so Hebrew reads correctly left-to-right.
+RTL_CHAR_RANGES = [
+    (0x0590, 0x05FF),
+    (0xFB1D, 0xFB4F),
+]
 
-    Terminals that don't support Unicode bidi show Hebrew in wrong order. Reversing
-    the string makes it display in the correct reading order when the terminal
-    renders LTR.
-    """
+
+def _is_rtl_char(c: str) -> bool:
+    if not c:
+        return False
+    o = ord(c)
+    return any(lo <= o <= hi for lo, hi in RTL_CHAR_RANGES)
+
+
+def is_rtl(text: str | None) -> bool:
+    if not text or not text.strip():
+        return False
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+    rtl_count = sum(1 for c in letters if _is_rtl_char(c))
+    return rtl_count > len(letters) / 2
+
+
+def rtl_display(text: str | None) -> str:
     if text is None or not text.strip():
         return text or ""
-    return text.strip()[::-1]
+    s = text.strip()
+    return s[::-1] if is_rtl(s) else s
+
+
+def display_value(value: str | None | date | datetime | dict | list | Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (date, datetime)):
+        return str(value)
+    if isinstance(value, (dict, list)):
+        try:
+            s = json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            s = str(value)
+        return rtl_display(s)
+    return rtl_display(str(value))
 
 
 def content_hash(
@@ -37,11 +66,6 @@ def content_hash(
     eligibility: str | None,
     source_url: str,
 ) -> str:
-    """Stable hash for deduplication and change detection.
-
-    Same content (after normalization) yields the same hash.
-    Uses UTF-8 and SHA-256.
-    """
     parts = [
         title or "",
         description or "",
@@ -55,33 +79,20 @@ def content_hash(
 
 
 def clean_hebrew_text(text: str | None) -> str:
-    """Hebrew-aware text cleaning: strip and normalize spaces only.
-
-    Does NOT translate or transliterate. Optional: strip RTL/LTR marks
-    if they cause comparison issues (e.g. in content_hash).
-    """
     if text is None:
         return ""
     s = text.strip()
-    # Normalize internal whitespace (including newlines/tabs) to single space.
     s = re.sub(r"\s+", " ", s)
-    # Optionally strip RTL/LTR marks for stable comparison; document in code.
     for mark in RTL_LTR_MARKS:
         s = s.replace(mark, "")
     return s.strip()
 
 
 def parse_deadline(raw: str | None) -> date | None:
-    """Parse deadline from multiple formats (dd/mm/yyyy, Hebrew months, textual).
-
-    Returns None if unclear; caller should keep raw string in deadline_text.
-    TODO: business rules ambiguous for phrases like "until 15.3" vs "application by 15.3".
-    """
     if not raw or not raw.strip():
         return None
     raw = clean_hebrew_text(raw)
 
-    # dd/mm/yyyy or d/m/yyyy
     m = re.match(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$", raw)
     if m:
         d, mon, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -92,7 +103,6 @@ def parse_deadline(raw: str | None) -> date | None:
         except ValueError:
             pass
 
-    # yyyy-mm-dd
     m = re.match(r"^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$", raw)
     if m:
         y, mon, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -101,12 +111,10 @@ def parse_deadline(raw: str | None) -> date | None:
         except ValueError:
             pass
 
-    # TODO: Hebrew month names (e.g. תשרי, חשון) and phrases like "עד סוף סמסטר".
     return None
 
 
 def utc_now() -> datetime:
-    """Current time in UTC for fetched_at."""
     return datetime.now(timezone.utc)
 
 
@@ -116,11 +124,6 @@ def retry_network(
     min_wait: float = 1.0,
     max_wait: float = 10.0,
 ):
-    """Tenacity retry decorator for network/parsing; exponential backoff.
-
-    Use for httpx requests and parsing. Fail gracefully at call site
-    (log, return empty list or raise clear exception per policy).
-    """
     excs = exceptions if exceptions else (Exception,)
     return retry(
         stop=stop_after_attempt(attempts),

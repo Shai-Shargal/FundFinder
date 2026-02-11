@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup  
 
 from services.scraper.models import Grant
 from services.scraper.sources.base import SourceScraper
