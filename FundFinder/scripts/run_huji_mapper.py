@@ -13,7 +13,7 @@ except ModuleNotFoundError:
     sys.exit(1)
 
 from services.scraper.models import Grant
-from services.scraper.sources.huji_mapper import map_huji_json_to_grant
+from services.scraper.sources.huji.mapper import map_huji_json_to_grant
 
 HUJI_DETAILS_URL = "https://new.huji.ac.il/scholarshipsservices/scholarshipdetails/{id}"
 
