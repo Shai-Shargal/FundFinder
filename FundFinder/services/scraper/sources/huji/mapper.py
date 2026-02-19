@@ -25,10 +25,18 @@ def _first_contact_phone(contacts: list | None) -> str | None:
     return (phone.strip() if isinstance(phone, str) and phone.strip() else None) or None
 
 
+# Only match amounts that are clearly money-related (ש"ח, ₪, or explicit phrases).
+# Do NOT match bare 4+ digit numbers (years, internal IDs).
 _AMOUNT_NUMERIC_PATTERNS = [
-    re.compile(r'\d{1,3}(?:,\d{3})*\s?ש"ח'),
-    re.compile(r'₪\s?\d{1,3}(?:,\d{3})*'),
-    re.compile(r'\d{4,}'),
+    # Range: 5,000–10,000 ש"ח or 5,000 - 10,000 ש"ח (must come before single-amount patterns)
+    re.compile(r'\d{1,3}(?:,\d{3})*\s*[-–]\s*\d{1,3}(?:,\d{3})*\s*ש"ח'),
+    re.compile(r'\d+\s*[-–]\s*\d+\s*ש"ח'),
+    # Number + ש"ח (comma-separated or plain)
+    re.compile(r'\d{1,3}(?:,\d{3})*\s*ש"ח'),
+    re.compile(r'\d+\s*ש"ח'),
+    # ₪ + number
+    re.compile(r'₪\s*\d{1,3}(?:,\d{3})*'),
+    re.compile(r'₪\s*\d+'),
 ]
 _AMOUNT_PHRASES = ("שכר לימוד מלא", "מלגה מלאה")
 
@@ -43,6 +51,11 @@ def extract_amount(text: str | None) -> str | None:
             s = (m.strip() if isinstance(m, str) else str(m).strip())
             if s and s not in numeric_matches:
                 numeric_matches.append(s)
+    # Drop matches that are substrings of another (e.g. "10,000 ש"ח" inside "5,000 - 10,000 ש"ח")
+    numeric_matches = [
+        m for m in numeric_matches
+        if not any(m != other and m in other for other in numeric_matches)
+    ]
     phrase_found: str | None = None
     for phrase in _AMOUNT_PHRASES:
         if phrase in t:
