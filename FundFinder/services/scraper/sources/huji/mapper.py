@@ -70,11 +70,32 @@ def extract_amount(text: str | None) -> str | None:
     return None
 
 
+def _safe_numeric(data: dict, key: str) -> int | float | None:
+    v = data.get(key)
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    try:
+        return int(v) if isinstance(v, str) and v.strip().isdigit() else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def map_huji_json_to_grant(data: dict) -> Grant:
     if not isinstance(data, dict):
         data = {}
 
-    title = _get(data, "hebrewName") or _get(data, "englishName") or "Unknown"
+    # Title from details only: hebrewName (preferred) else englishName. Never append amount to title.
+    hebrew_name = _get(data, "hebrewName")
+    english_name = _get(data, "englishName")
+    if hebrew_name and "..." not in hebrew_name:
+        title = hebrew_name
+    elif english_name and "..." not in english_name:
+        title = english_name
+    else:
+        title = hebrew_name or english_name or "Unknown"
+
     description = _get(data, "hebrewDescription") or _get(data, "englishDescription")
 
     scholarships_id = data.get("scholarshipsId")
@@ -88,17 +109,31 @@ def map_huji_json_to_grant(data: dict) -> Grant:
     deadline_text = submission_date_to
     deadline = parse_deadline(submission_date_to) if submission_date_to else None
 
-    raw_amount_desc = _get(data, "descriptionScholarshipAmount")
-    amount = extract_amount(raw_amount_desc)
-    if amount is None and description:
-        amount = extract_amount(description)
+    # Amount: from sumYearFrom and/or sumYearTo; if both equal -> single value, else range; else fallback to description text
+    sum_year_from = _safe_numeric(data, "sumYearFrom")
+    sum_year_to = _safe_numeric(data, "sumYearTo")
     sum_currency = _get(data, "sumCurrency")
-    if sum_currency:
-        currency = sum_currency
-    elif amount:
-        currency = "ILS"
+    from_ok = sum_year_from is not None and sum_year_from > 0
+    to_ok = sum_year_to is not None and sum_year_to > 0
+    if from_ok or to_ok:
+        if from_ok and to_ok:
+            lo, hi = min(sum_year_from, sum_year_to), max(sum_year_from, sum_year_to)
+            amount = str(int(lo)) if lo == int(lo) else str(lo)
+            if lo != hi:
+                amount += "\u2013" + (str(int(hi)) if hi == int(hi) else str(hi))  # en dash
+        elif from_ok:
+            amount = str(int(sum_year_from)) if sum_year_from == int(sum_year_from) else str(sum_year_from)
+        else:
+            amount = str(int(sum_year_to)) if sum_year_to == int(sum_year_to) else str(sum_year_to)
+        currency = sum_currency  # as-is, only when we have numeric amount
     else:
-        currency = None
+        raw_amount_desc = _get(data, "descriptionScholarshipAmount")
+        amount = extract_amount(raw_amount_desc)
+        if amount is None and description:
+            amount = extract_amount(description)
+        currency = None  # fallback branch: no numeric amount
+
+    raw_amount_desc = _get(data, "descriptionScholarshipAmount")
 
     parts = [
         _get(data, "degree"),
