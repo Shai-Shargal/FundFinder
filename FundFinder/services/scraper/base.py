@@ -6,7 +6,13 @@ from services.scraper.models import Grant
 
 
 class SourceScraper(ABC):
-    """Interface for a grant source. Each website has its own scraper in scrapers/<site>/."""
+    """Interface for a grant source.
+
+    Scraper implementations live under sources/<site>/ (e.g. sources/huji/).
+    The scrapers/ package acts as a registry that collects and exposes available
+    scrapers. Each scraper must subclass SourceScraper and implement
+    scrape() -> list[Grant].
+    """
 
     source_name: str
     base_url: str

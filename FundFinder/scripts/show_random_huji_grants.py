@@ -1,10 +1,16 @@
-"""Fetch HUJI grants and show 5 random ones so you can see how the data looks."""
+"""Show random HUJI grants. Fetches from HUJI and displays 5 random grants."""
 
 from __future__ import annotations
 
 import logging
 import random
 import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path so "services" resolves when run as script
+_root = Path(__file__).resolve().parent.parent
+if _root not in sys.path:
+    sys.path.insert(0, str(_root))
 
 from services.scraper.pipeline import run_sources
 from services.scraper.sources.huji.scraper import HUJIScraper
@@ -14,6 +20,7 @@ logging.basicConfig(level=logging.WARNING)
 
 def main() -> None:
     scraper = HUJIScraper()
+    print("Show random HUJI grants")
     print("Fetching HUJI grants...")
     grants = run_sources([scraper])
     total = len(grants)
