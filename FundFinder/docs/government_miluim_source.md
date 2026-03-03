@@ -2,19 +2,14 @@
 
 ## Goal
 
-Add a new Government-based source that represents the IDF Reserve Student Grant
-("חרבות ברזל" / Student Reserve Grant).
+Provide a Government-based source for the IDF Reserve Student Grant
+("סיוע חד פעמי בתשלום שכר הלימוד" / one-time tuition assistance for reservist students).
 
-This is NOT a dynamic scraper.
+The source scrapes the official Miluim article page to extract grant amounts for:
+- **מערך לוחם** (fighter units) – 100% tier
+- **מערך עורפי** (rear units) – 30% tier
 
-This source represents a policy-level grant that:
-- Applies nationwide
-- Is not institution-specific
-- Changes infrequently
-- Does not require scraping HTML
-
-The goal is to normalize and expose high-level grant information
-in a clean and minimal way.
+Users can see who is eligible, the two grant tiers with current amounts, and a link to the official site for full details.
 
 ---
 
@@ -22,96 +17,65 @@ in a clean and minimal way.
 
 Users should be able to:
 
-- Enter the site
-- See that there is a grant for reservists
-- Understand:
-  - Who is eligible
-  - For which academic year
-  - Whether the amount is fixed or variable
-- Click a link to the official government site for full details
-
-We are NOT reproducing the full page.
-We are NOT scraping dynamic content.
-We are providing structured access to public information.
+- See that there is a grant for reservist students
+- Understand who is eligible (60+ days שמ״פ in צו 8)
+- See the two grant types (לוחם / עורפי) with scraped amounts
+- Click through to the official Miluim article for full details
 
 ---
 
-## Architecture Decision
+## Architecture
 
-This source will:
+- **Location:** `services/scraper/sources/government/miluim_student_grant.py`
+- **Class:** `MiluimStudentGrantSource` (subclasses `SourceScraper`)
+- **source_name:** `"government_miluim"`
+- **base_url:** `https://www.miluim.idf.il`
 
-- Live under:
+### Implementation
 
-    services/scraper/sources/government/miluim.py
+- **Playwright** (sync API, headless) loads the article page.
+- Wait for **networkidle** before capturing the DOM.
+- **BeautifulSoup** parses the final HTML (no raw HTTP; content comes from Playwright).
+- Extraction: find a paragraph containing `"סיוע חד פעמי בתשלום שכר הלימוד"`, then extract amounts with regex `r"\(([\d,\.]+)₪\)"` (first = fighter, second = rear). Numbers are normalized (commas removed).
+- Browser is closed in a `finally` block after use.
 
-- Subclass `SourceScraper`
-- Return a static `Grant` object
-- Not perform HTTP requests
-- Not use BeautifulSoup
-- Not depend on external HTML
+### Target URL
 
-Reason:
-This is a policy-based benefit, not a dynamic scholarship list.
+`https://www.miluim.idf.il/articles-list/סטודנטים-ממילואים-ללימודים`
 
 ---
 
 ## Grant Model Mapping
 
-The Miluim grant should be normalized into a single Grant object.
+The scraper returns **two** `Grant` objects.
 
-### Fields:
+### Shared fields (both grants)
 
-- title:
-  "מענק מילואים לסטודנטים – חרבות ברזל"
+- **source_name:** `"government_miluim"`
+- **source_url:** The article URL above
+- **eligibility:** `"סטודנטים שביצעו לפחות 60 ימי שמ״פ במסגרת צו 8 במהלך שירות מילואים פעיל."`
+- **description:** `"סיוע חד פעמי בתשלום שכר לימוד עבור סטודנטים המשרתים במילואים במסגרת חרבות ברזל. היקף הסיוע תלוי בסוג היחידה (לוחם או עורפי)."`
+- **deadline:** `None` (unless explicitly found on the page)
+- **content_hash:** Computed via `content_hash` utility (per grant, so each has a distinct hash)
+- **fetched_at:** `utc_now()`
 
-- source_name:
-  "government_miluim"
+### Grant 1 – מערך לוחם
 
-- source_url:
-  Official IDF Miluim site URL
+- **title:** `"מענק מילואים לסטודנטים – מערך לוחם"`
+- **amount:** Fighter amount (from page, normalized)
+- **currency:** `"ILS"`
 
-- deadline:
-  None (unless official closing date is clearly defined)
+### Grant 2 – מערך עורפי
 
-- amount:
-  None (amount varies depending on days served)
-
-- currency:
-  None
-
-- eligibility:
-  Short structured summary, e.g.:
-  "משרתי מילואים פעילים שהם סטודנטים בשנת הלימודים הרלוונטית"
-
-- description:
-  High-level explanation:
-  "מענק משתנה בהתאם למספר ימי השירות במסגרת חרבות ברזל..."
-
----
-
-## What We Explicitly Do NOT Do
-
-- Do not scrape HTML
-- Do not parse numeric values from examples
-- Do not try to compute grant amounts
-- Do not embed large policy text blocks
-- Do not depend on frontend DOM structure
+- **title:** `"מענק מילואים לסטודנטים – מערך עורפי"`
+- **amount:** Rear amount (from page, normalized)
+- **currency:** `"ILS"`
 
 ---
 
 ## Future Extension
 
-If later we want to:
-
-- Add more government benefits
-- Add “ממדים ללימודים”
-- Add additional military-related grants
-
-They should live under:
-
-    sources/government/
-
-Each as a separate file or as separate Grant entries.
+Additional government benefits (e.g. "ממדים ללימודים" or other military-related grants) should live under `sources/government/`, each in its own file or as additional Grant entries.
 
 ---
 
@@ -119,8 +83,10 @@ Each as a separate file or as separate Grant entries.
 
 Calling:
 
-    MiluimSource().scrape()
+    MiluimStudentGrantSource().scrape()
 
-Should return:
+returns:
 
-    list[Grant] with exactly one normalized grant.
+    list[Grant] with exactly two grants (מערך לוחם, מערך עורפי).
+
+If the target paragraph or both amounts cannot be extracted, the method returns an empty list and logs a warning.
