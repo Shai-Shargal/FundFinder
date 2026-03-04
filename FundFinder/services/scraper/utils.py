@@ -1,10 +1,12 @@
 
 import hashlib
 import json
+import logging
 import re
 from datetime import date, datetime, timezone
 from typing import Any
 
+from playwright.sync_api import sync_playwright
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -116,6 +118,28 @@ def parse_deadline(raw: str | None) -> date | None:
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def load_page_html(
+    url: str,
+    timeout_ms: int = 30_000,
+    source_name: str = "scraper",
+) -> str | None:
+    """Load URL with Playwright (headless), wait for networkidle, return HTML."""
+    logger = logging.getLogger(__name__)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(url, timeout=timeout_ms)
+                page.wait_for_load_state("networkidle", timeout=timeout_ms)
+                return page.content()
+            finally:
+                browser.close()
+    except Exception as e:
+        logger.warning("%s: Playwright load failed: %s", source_name, e)
+        return None
 
 
 def retry_network(

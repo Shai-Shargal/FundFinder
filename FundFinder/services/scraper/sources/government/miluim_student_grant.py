@@ -18,11 +18,10 @@ from datetime import datetime
 from urllib.parse import quote
 
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
 
 from services.scraper.base import SourceScraper
 from services.scraper.models import Grant
-from services.scraper.utils import content_hash, utc_now
+from services.scraper.utils import content_hash, load_page_html, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +285,7 @@ class MiluimStudentGrantSource(SourceScraper):
         grants: list[Grant] = []
 
         # 1. Load page with Playwright
-        html = _load_page_html(source_url)
+        html = load_page_html(source_url, timeout_ms=TIMEOUT_MS, source_name="MiluimStudentGrant")
         if not html:
             logger.warning("MiluimStudentGrant: failed to load page HTML")
             return []
@@ -316,20 +315,3 @@ class MiluimStudentGrantSource(SourceScraper):
                 parsed.rear_amount_str,
             )
         return grants
-
-
-def _load_page_html(url: str) -> str | None:
-    """Load URL with Playwright (headless), wait for networkidle, return HTML. Caller owns cleanup."""
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            try:
-                page = browser.new_page()
-                page.goto(url, timeout=TIMEOUT_MS)
-                page.wait_for_load_state("networkidle", timeout=TIMEOUT_MS)
-                return page.content()
-            finally:
-                browser.close()
-    except Exception as e:
-        logger.warning("MiluimStudentGrant: Playwright load failed: %s", e)
-        return None
