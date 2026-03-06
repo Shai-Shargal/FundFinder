@@ -41,7 +41,7 @@ FundFinder/
 
 1. `services.scraper.pipeline.run_sources()` returns `list[Grant]`
 2. A script or future job calls `GrantRepository.upsert_many(grants)`
-3. `backend.db` persists grants and handles deduplication by `content_hash`
+3. `backend.db` persists grants and upserts by `source_url` (one row per grant page; updates when content changes)
 
 ---
 
@@ -74,7 +74,7 @@ Maps 1:1 to the `Grant` Pydantic model in `services/scraper/models.py`.
 | `amount` | `TEXT` | Yes | As displayed (e.g. ₪5,000) |
 | `currency` | `VARCHAR(8)` | Yes | e.g. ILS |
 | `eligibility` | `TEXT` | Yes | Raw or cleaned eligibility text |
-| `content_hash` | `VARCHAR(64)` | No | SHA-256 hex for deduplication |
+| `content_hash` | `VARCHAR(64)` | No | SHA-256 hex for change detection (not used as unique key) |
 | `fetched_at` | `TIMESTAMPTZ` | No | Scrape time (UTC) |
 | `extra` | `JSONB` | Yes | Source-specific fields |
 | `created_at` | `TIMESTAMPTZ` | No | First insert time |
@@ -82,10 +82,10 @@ Maps 1:1 to the `Grant` Pydantic model in `services/scraper/models.py`.
 
 **Indexes:**
 
-- `UNIQUE(content_hash)` — enforce one row per content hash; enables upsert
+- `UNIQUE(source_url)` — one row per grant page; enables upsert by URL (prevents duplicates when grant content changes)
 - `INDEX(source_name)` — filter by source
 - `INDEX(deadline)` — filter by deadline (for "upcoming" queries)
-- `INDEX(source_url)` — optional; useful if we query by URL
+- `INDEX(content_hash)` — optional; for change-detection queries
 
 ### 4.2 SQL DDL (Reference)
 
@@ -94,14 +94,14 @@ CREATE TABLE grants (
     id BIGSERIAL PRIMARY KEY,
     title TEXT NOT NULL,
     description TEXT,
-    source_url TEXT NOT NULL,
+    source_url TEXT NOT NULL UNIQUE,
     source_name VARCHAR(64) NOT NULL,
     deadline DATE,
     deadline_text TEXT,
     amount TEXT,
     currency VARCHAR(8),
     eligibility TEXT,
-    content_hash VARCHAR(64) NOT NULL UNIQUE,
+    content_hash VARCHAR(64) NOT NULL,
     fetched_at TIMESTAMPTZ NOT NULL,
     extra JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -111,18 +111,23 @@ CREATE TABLE grants (
 CREATE INDEX idx_grants_source_name ON grants(source_name);
 CREATE INDEX idx_grants_deadline ON grants(deadline);
 CREATE INDEX idx_grants_fetched_at ON grants(fetched_at);
+CREATE INDEX idx_grants_content_hash ON grants(content_hash);
 ```
 
 ---
 
 ## 5. Upsert Strategy
 
-**Key:** `content_hash` is the natural key. Same hash = same grant content.
+**Key:** `source_url` is the natural key. Same URL = same grant page. When a grant's content changes (description, deadline, amount, etc.), `content_hash` changes—but we update the existing row instead of creating a duplicate.
+
+**Why not `content_hash`?** If we used `UNIQUE(content_hash)`, every content change would create a new row. The same grant would appear multiple times. Using `UNIQUE(source_url)` ensures one row per grant page; updates overwrite the existing row.
+
+**Role of `content_hash`:** Used for change detection only (e.g. compare old vs new hash to know if a grant was updated, for notifications or changelog). Not used as the upsert key.
 
 **Behavior:**
 
-- **Insert** if `content_hash` does not exist
-- **Update** if `content_hash` exists: refresh `title`, `description`, `deadline`, `amount`, `eligibility`, `fetched_at`, `extra`; set `updated_at = NOW()`
+- **Insert** if `source_url` does not exist
+- **Update** if `source_url` exists: refresh `title`, `description`, `deadline`, `amount`, `eligibility`, `content_hash`, `fetched_at`, `extra`; set `updated_at = NOW()`
 - `created_at` is set on insert only and never changed
 
 **PostgreSQL upsert:**
@@ -132,15 +137,15 @@ INSERT INTO grants (title, description, source_url, source_name, deadline, deadl
                     amount, currency, eligibility, content_hash, fetched_at, extra,
                     created_at, updated_at)
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-ON CONFLICT (content_hash) DO UPDATE SET
+ON CONFLICT (source_url) DO UPDATE SET
     title = EXCLUDED.title,
     description = EXCLUDED.description,
-    source_url = EXCLUDED.source_url,
     deadline = EXCLUDED.deadline,
     deadline_text = EXCLUDED.deadline_text,
     amount = EXCLUDED.amount,
     currency = EXCLUDED.currency,
     eligibility = EXCLUDED.eligibility,
+    content_hash = EXCLUDED.content_hash,
     fetched_at = EXCLUDED.fetched_at,
     extra = EXCLUDED.extra,
     updated_at = NOW();
