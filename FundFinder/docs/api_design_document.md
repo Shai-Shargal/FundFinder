@@ -54,14 +54,14 @@ The API exposes the existing **grants** table. Each grant has:
 | Parameter     | Type    | Required | Default     | Description |
 |---------------|---------|----------|-------------|-------------|
 | `page`        | integer | No       | 1           | Page number (1-based). |
-| `limit`       | integer | No       | 20          | Items per page. Max: 100. |
+| `limit`       | integer | No       | 20          | Items per page. Max: 50. |
 | `q`           | string  | No       | —           | Keyword search (title, description, eligibility). |
-| `source_name` | string  | No       | —           | Filter by exact source name. |
+| `source_name` | string  | No       | —           | Filter by source name. May be repeated; backend applies `source_name IN (...)` (e.g. `?source_name=reichman&source_name=huji`). |
 | `has_deadline`| boolean | No       | —           | If `true`, only grants with a deadline; if `false`, only without. |
-| `sort_by`     | string  | No       | `updated_at`| Sort field (see Sorting). |
-| `order`       | string  | No       | `desc`      | `asc` or `desc`. |
+| `sort_by`     | string  | No       | `deadline`  | Sort field (see Sorting). |
+| `order`       | string  | No       | `asc`       | `asc` or `desc`. Invalid value → 400. |
 
-**Validation:** `page` ≥ 1, `limit` 1–100. Invalid `sort_by` or `order` → `400 Bad Request`.
+**Validation:** `page` ≥ 1, `limit` 1–50. `order` must be `asc` or `desc`. Invalid `sort_by` or `order` → `400 Bad Request`.
 
 ### GET /api/grants/{id}
 
@@ -70,15 +70,38 @@ The API exposes the existing **grants** table. Each grant has:
 
 ### GET /api/grants/filters
 
-- No query parameters for MVP. Returns all distinct `source_names` and `currencies` in the database.
+- No query parameters for MVP. The backend returns **distinct** values: `SELECT DISTINCT source_name` and `SELECT DISTINCT currency` from the grants table, so no duplicates appear in the response.
 
 ---
 
 ## 5. Response Schemas
 
-### Grant object
+### Grant list item (GET /api/grants)
 
-Used in list items and in the single-grant response. Dates/datetimes in ISO 8601.
+Each element in the `items` array uses this shape. The full `description` is **not** returned in the list; use `description_snippet` for previews (~200 characters, truncated). This keeps list payloads small.
+
+```json
+{
+  "id": 1,
+  "title": "מלגת מצוינות",
+  "description_snippet": "מלגה לסטודנטים מצטיינים...",
+  "source_url": "https://example.org/grant/1",
+  "source_name": "reichman",
+  "deadline": "2025-06-30",
+  "deadline_text": "30 ביוני 2025",
+  "amount": "₪10,000",
+  "currency": "ILS",
+  "eligibility": "סטודנטים שנה ב' ומעלה",
+  "fetched_at": "2025-03-01T12:00:00Z",
+  "extra": null,
+  "created_at": "2025-01-15T08:00:00Z",
+  "updated_at": "2025-03-01T12:00:00Z"
+}
+```
+
+### Grant object (full) — GET /api/grants/{id}
+
+Single-grant response includes the full `description` (no snippet). Dates/datetimes in ISO 8601.
 
 ```json
 {
@@ -103,7 +126,7 @@ Used in list items and in the single-grant response. Dates/datetimes in ISO 8601
 
 ```json
 {
-  "items": [ { /* Grant object */ }, ... ],
+  "items": [ { /* Grant list item (description_snippet) */ }, ... ],
   "pagination": {
     "page": 1,
     "limit": 20,
@@ -117,7 +140,7 @@ Used in list items and in the single-grant response. Dates/datetimes in ISO 8601
 
 ### Single grant (GET /api/grants/{id})
 
-Returns one Grant object (as above).
+Returns one full Grant object (with `description`, not `description_snippet`).
 
 ### Filter options (GET /api/grants/filters)
 
@@ -128,7 +151,7 @@ Returns one Grant object (as above).
 }
 ```
 
-Omit null currencies or include a sentinel (e.g. `"unspecified"`) as needed for the frontend.
+Values are **distinct** (no duplicates). Omit null currencies or include a sentinel (e.g. `"unspecified"`) as needed for the frontend.
 
 ### Error response
 
@@ -148,7 +171,7 @@ Use `400` for bad parameters, `404` for missing grant, `422` for validation (e.g
 ## 6. Pagination
 
 - **Style:** Page-based. Query: `?page=1&limit=20`.
-- **Defaults:** `page=1`, `limit=20`; cap `limit` at 100.
+- **Defaults:** `page=1`, `limit=20`; cap `limit` at **50**.
 - **Response:** Include `items` (array of grants) and `pagination` with:
   - `page`, `limit`
   - `total_items` (count matching filters/search)
@@ -162,7 +185,7 @@ Run the same filters/search for the count query so pagination reflects the curre
 ## 7. Filtering
 
 - **`q` (keyword search):** Apply to `title`, `description`, and `eligibility`. MVP implementation: SQL `ILIKE %q%` on each field (OR). Empty `q` is ignored.
-- **`source_name`:** Exact match on `source_name`. Single value.
+- **`source_name`:** May be sent multiple times (e.g. `?source_name=reichman&source_name=huji`). Backend interprets as **`source_name IN (...)`** — return grants whose `source_name` is any of the given values.
 - **`has_deadline`:**  
   - `true` → `deadline IS NOT NULL`  
   - `false` → `deadline IS NULL`
@@ -173,10 +196,11 @@ All filters are combined with AND.
 
 ## 8. Sorting
 
-- **Parameters:** `sort_by`, `order` (`asc` | `desc`).
-- **Default:** `sort_by=updated_at`, `order=desc`.
+- **Parameters:** `sort_by`, `order`.
+- **Default:** `sort_by=deadline`, `order=asc`, with **`NULLS LAST`** for the sort column (so grants with the closest deadlines appear first; grants with no deadline appear at the end).
 - **Allowed `sort_by` values:** `deadline`, `created_at`, `updated_at`, `title`. Invalid value → 400.
-- **Nulls:** For `deadline`, use a consistent rule (e.g. `NULLS LAST` when ascending). Validate `sort_by` against the whitelist to avoid SQL injection.
+- **`order`:** Must be one of `asc` or `desc`. Invalid value → 400 Bad Request.
+- **Security:** Validate `sort_by` and `order` against the whitelist; do not pass user input directly into `ORDER BY`.
 
 ---
 
@@ -195,8 +219,8 @@ No further design or implementation is required for the MVP. When adding it, kee
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/grants` | List with pagination, keyword search (`q`), filters (`source_name`, `has_deadline`), and sort (`sort_by`, `order`). |
-| `GET /api/grants/{id}` | Full details for one grant. |
-| `GET /api/grants/filters` | Distinct source names and currencies for dropdowns. |
+| `GET /api/grants` | List with pagination (max 50 per page), keyword search (`q`), filters (`source_name` repeatable → IN, `has_deadline`), and sort (default: deadline asc, NULLS LAST). Returns `description_snippet`, not full `description`. |
+| `GET /api/grants/{id}` | Full details for one grant (includes full `description`). |
+| `GET /api/grants/filters` | Distinct source names and currencies for dropdowns (no duplicates). |
 
 This is enough for a backend engineer to implement the MVP API on top of the existing database and repository.
