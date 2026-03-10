@@ -1,13 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { GetGrantsQueryDto } from './dto/get-grants-query.dto';
 import { FilterOptions } from './interfaces/filter-options.interface';
 import { GrantDetail } from './interfaces/grant-detail.interface';
 import { GrantListItem } from './interfaces/grant-list-item.interface';
 import { ListResponse } from './interfaces/list-response.interface';
 
-const SORT_BY_WHITELIST = ['deadline', 'created_at', 'updated_at', 'title'] as const;
-const ORDER_WHITELIST = ['asc', 'desc'] as const;
 const SNIPPET_LENGTH = 200;
 
 interface GrantRow {
@@ -32,49 +29,7 @@ interface GrantRow {
 export class GrantsService {
   constructor(private readonly db: DatabaseService) {}
 
-  async list(query: GetGrantsQueryDto): Promise<ListResponse> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const sortBy = SORT_BY_WHITELIST.includes(query.sort_by as (typeof SORT_BY_WHITELIST)[number])
-      ? query.sort_by!
-      : 'deadline';
-    const order = ORDER_WHITELIST.includes(query.order!) ? query.order! : 'asc';
-    const sourceNames = Array.isArray(query.source_name)
-      ? query.source_name.filter(Boolean)
-      : query.source_name
-        ? [query.source_name]
-        : [];
-
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    let paramIndex = 1;
-
-    if (query.q?.trim()) {
-      conditions.push(`(title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR eligibility ILIKE $${paramIndex})`);
-      params.push(`%${query.q.trim()}%`);
-      paramIndex++;
-    }
-    if (sourceNames.length > 0) {
-      conditions.push(`source_name = ANY($${paramIndex})`);
-      params.push(sourceNames);
-      paramIndex++;
-    }
-    if (query.has_deadline === true) {
-      conditions.push('deadline IS NOT NULL');
-    } else if (query.has_deadline === false) {
-      conditions.push('deadline IS NULL');
-    }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const countSql = `SELECT COUNT(*)::int AS total FROM grants ${whereClause}`;
-    const countResult = await this.db.query<{ total: number }>(countSql, params);
-    const totalItems = countResult.rows[0]?.total ?? 0;
-    const totalPages = Math.ceil(totalItems / limit) || 1;
-    const offset = (page - 1) * limit;
-
-    const nullsClause = sortBy === 'deadline' && order === 'asc' ? ' NULLS LAST' : '';
-    const orderClause = `ORDER BY ${sortBy} ${order.toUpperCase()}${nullsClause}`;
-    const listParams = [...params, limit, offset];
+  async list(): Promise<ListResponse> {
     const listSql = `
       SELECT
         id, title,
@@ -82,11 +37,9 @@ export class GrantsService {
         source_url, source_name, deadline, deadline_text, amount, currency, eligibility,
         fetched_at, extra, created_at, updated_at
       FROM grants
-      ${whereClause}
-      ${orderClause}
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      ORDER BY id ASC
     `;
-    const listResult = await this.db.query<GrantRow>(listSql, listParams);
+    const listResult = await this.db.query<GrantRow>(listSql);
     const items: GrantListItem[] = listResult.rows.map((row) => ({
       id: row.id,
       title: row.title,
@@ -104,17 +57,7 @@ export class GrantsService {
       updated_at: row.updated_at,
     }));
 
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        total_items: totalItems,
-        total_pages: totalPages,
-        has_next: page < totalPages,
-        has_prev: page > 1,
-      },
-    };
+    return { items };
   }
 
   async getFilters(): Promise<FilterOptions> {

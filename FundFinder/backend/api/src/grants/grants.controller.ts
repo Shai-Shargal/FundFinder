@@ -3,13 +3,11 @@ import {
   Get,
   Param,
   ParseIntPipe,
-  Query,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { GrantsService } from './grants.service';
-import { GetGrantsQueryDto } from './dto/get-grants-query.dto';
 
 @ApiTags('Grants')
 @Controller('grants')
@@ -17,10 +15,10 @@ export class GrantsController {
   constructor(private readonly grantsService: GrantsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List grants with optional filters and pagination' })
-  @ApiResponse({ status: 200, description: 'Paginated list of grants' })
-  async list(@Query() query: GetGrantsQueryDto) {
-    return this.grantsService.list(query);
+  @ApiOperation({ summary: 'List all grants' })
+  @ApiResponse({ status: 200, description: 'List of grants' })
+  async list() {
+    return this.grantsService.list();
   }
 
   @Get('filters')
